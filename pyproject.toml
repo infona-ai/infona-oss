@@ -78,6 +78,9 @@ dev = [
     "pytest-cov>=6.0.0",
     "httpx",
     "neo4j>=5.26.0",
+    # Mocks `requests`, which dlt's REST client uses. The connector fixture
+    # tests skip without the [dlt] extra; this library is what they mock with.
+    "responses>=0.25.0",
 ]
 
 [tool.hatch.build.targets.wheel]

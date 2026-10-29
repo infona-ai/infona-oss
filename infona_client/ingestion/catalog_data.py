@@ -1,15 +1,21 @@
 """The connector templates themselves (ONTA-555). Data only — no logic.
 
 Each entry prefills the generic REST / SQL extract (see ``catalog.py`` for the
-boundary rules). Paths and auth types come from each vendor's PUBLIC API docs
-and are **not** verified against any particular account or plan: they stay
-editable in the connect drawer, and a wrong path surfaces as the usual
+boundary rules). Paths and auth types come from each vendor's public API docs
+and stay editable in the connect drawer. A wrong path surfaces as the usual
 "upstream 404 — check base_url and resource paths" error.
+
+``verified`` is set only on templates whose list paths, auth, and response
+envelope have a passing mocked-HTTP fixture
+(``tests/test_connector_vendor_fixtures.py``). That check is not a live
+account. Salesforce is deferred (SOQL needs a sandbox org). Every REST
+template reports ``pagination="single_page"``: the extract returns the first
+page and does not follow a next-page link.
 
 Adding a template is a data-only change: append a :class:`ConnectorTemplate`
 here. It must (a) use https, (b) keep resource paths relative, (c) name a
 BYOK credential, and (d) never carry a token — ``tests/test_extract_catalog.py``
-enforces all four.
+enforces all four. Do not set ``verified`` without a fixture test.
 """
 
 from __future__ import annotations
@@ -19,6 +25,18 @@ from infona_client.ingestion.catalog import (
     ConnectorPlaceholder,
     ConnectorResource,
     ConnectorTemplate,
+    ConnectorVerification,
+)
+
+#: Recorded on the templates the mocked-HTTP fixtures actually cover.
+#: Not a live-account check. Do not reuse this on an unchecked template.
+DOC_FIXTURE_VERIFICATION = ConnectorVerification(
+    method="public API docs + mocked HTTP fixture (not a live account)",
+    date="2026-10-29",
+)
+
+_FIRST_PAGE = (
+    "The extract reads the first page only and does not follow a next-page link."
 )
 
 
@@ -35,18 +53,28 @@ CONNECTORS: tuple[ConnectorTemplate, ...] = (
         category="crm",
         kind="rest_api",
         blurb="Contacts, companies and deals from the HubSpot CRM API.",
-        docs_url="https://developers.hubspot.com/docs/api/crm/understanding-the-crm",
+        docs_url="https://developers.hubspot.com/docs/api-reference/legacy/crm/objects/contacts/guide",
         base_url="https://api.hubapi.com",
         auth=ConnectorAuth(
             type="bearer",
             label="Private app token",
-            help="HubSpot → Settings → Integrations → Private Apps. Needs the crm.objects.*.read scopes.",
+            help=(
+                "HubSpot → Settings → Integrations → Private Apps. "
+                "Needs crm.objects.contacts.read, crm.objects.companies.read, "
+                "and crm.objects.deals.read."
+            ),
         ),
         resources=[
             _r("crm/v3/objects/contacts", "Contacts", "Contact"),
             _r("crm/v3/objects/companies", "Companies", "Company"),
             _r("crm/v3/objects/deals", "Deals", "Deal"),
         ],
+        verified=DOC_FIXTURE_VERIFICATION,
+        note=(
+            "CRM v3 list calls (GET /crm/v3/objects/contacts, /companies, "
+            "and /deals) return results. "
+            + _FIRST_PAGE
+        ),
     ),
     ConnectorTemplate(
         id="salesforce",
@@ -83,27 +111,41 @@ CONNECTORS: tuple[ConnectorTemplate, ...] = (
                 id_field="Id",
             ),
         ],
-        note="Salesforce reads are SOQL queries — edit the SELECT list to pull the fields you care about.",
+        note=(
+            "Not verified — deferred. Salesforce reads are SOQL and need a "
+            "sandbox org to check. Edit the SELECT list to pull the fields "
+            "you care about. " + _FIRST_PAGE
+        ),
     ),
     ConnectorTemplate(
         id="pipedrive",
         title="Pipedrive",
         category="crm",
         kind="rest_api",
-        blurb="People, organizations and deals from the Pipedrive v1 API.",
+        blurb="People, organizations and deals from the Pipedrive API v2.",
         docs_url="https://developers.pipedrive.com/docs/api/v1",
-        base_url="https://api.pipedrive.com/v1",
+        base_url="https://api.pipedrive.com/api/v2",
         auth=ConnectorAuth(
             type="api_key",
             label="API token",
             api_key_header="x-api-token",
-            help="Pipedrive → Personal preferences → API.",
+            help=(
+                "Pipedrive → Personal preferences → API. "
+                "Sent as the x-api-token header."
+            ),
         ),
         resources=[
             _r("persons", "People", "Person"),
             _r("organizations", "Organizations", "Organization"),
             _r("deals", "Deals", "Deal"),
         ],
+        verified=DOC_FIXTURE_VERIFICATION,
+        note=(
+            "List calls are API v2 (OpenAPI server https://api.pipedrive.com/api/v2) "
+            "and return data. The API token is the x-api-token header. "
+            "Pipedrive also documents https://<company>.pipedrive.com/api/v2; "
+            "edit the base URL to use that host. " + _FIRST_PAGE
+        ),
     ),
     ConnectorTemplate(
         id="stripe",
@@ -116,7 +158,11 @@ CONNECTORS: tuple[ConnectorTemplate, ...] = (
         auth=ConnectorAuth(
             type="bearer",
             label="Secret key",
-            help="Use a restricted key with read-only permissions (rk_…) where you can.",
+            help=(
+                "Paste a secret or restricted key (rk_… with read permission "
+                "where you can). It is sent as a bearer token, which Stripe's "
+                "authentication docs accept."
+            ),
         ),
         resources=[
             _r("v1/customers", "Customers", "Customer"),
@@ -124,6 +170,13 @@ CONNECTORS: tuple[ConnectorTemplate, ...] = (
             _r("v1/products", "Products", "Product"),
             _r("v1/charges", "Charges", "Charge", default=False),
         ],
+        verified=DOC_FIXTURE_VERIFICATION,
+        note=(
+            "List calls (GET /v1/…) return data. The secret key is sent as "
+            "Authorization: Bearer. Stripe's primary example is HTTP Basic "
+            "with the key as the username; bearer is the documented "
+            "alternative and matches this paste-a-token field. " + _FIRST_PAGE
+        ),
     ),
     ConnectorTemplate(
         id="shopify",

@@ -10479,6 +10479,30 @@
             "type": "string",
             "title": "Note",
             "default": ""
+          },
+          "verified": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectorVerification"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Public-docs check (method + date). Set only when a mocked-HTTP fixture drives the real extract path for this template. Absent means not verified. Not a live-account check."
+          },
+          "pagination": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "single_page"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pagination",
+            "description": "single_page on REST templates. The extract route pins dlt's single_page paginator, so a list endpoint returns its first page and a next-page link is not followed. SQL templates leave this unset."
           }
         },
         "type": "object",
@@ -10492,6 +10516,27 @@
         ],
         "title": "ConnectorTemplate",
         "description": "A prefilled starting point for one extract source."
+      },
+      "ConnectorVerification": {
+        "properties": {
+          "method": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Method"
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "title": "Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "method",
+          "date"
+        ],
+        "title": "ConnectorVerification",
+        "description": "How a template was checked. Absent on the template means not verified.\n\n``method`` names the check (public docs plus a mocked fixture, not a live\naccount). ``date`` is the ISO day that check was recorded."
       },
       "ConversationTurn": {
         "properties": {

@@ -61,6 +61,18 @@ jobs:
       # test files with the service-container DSN so the live-Postgres tests
       # (skipped above) execute. Kept as a separate step so the DSN never
       # reaches tests that need other extensions (e.g. PostGIS).
+      # Connector fixtures drive real rest_api_source. dlt stays out of the
+      # default install above so the rest of the suite does not import it.
+      - name: Run verified connector fixture tests
+        run: |
+          source .venv/bin/activate
+          uv pip install 'dlt>=1.8.0,<2'
+          pytest tests/test_connector_vendor_fixtures.py -q --tb=short
+        env:
+          INFONA_API_KEYS: '{"test-key": "test-tenant"}'
+          INFONA_NEPTUNE_ENDPOINT: "http://fake-neptune:8182"
+          PYTHONPATH: ${{ github.workspace }}
+
       - name: Run semantic pgvector integration tests
         run: |
           source .venv/bin/activate

@@ -2545,6 +2545,15 @@ Accept Invite By Token
 | `resources` | array | No |  |
 | `custom` | boolean | No |  |
 | `note` | string | No |  |
+| `verified` | object | No | Public-docs check (method + date). Set only when a mocked-HTTP fixture drives the real extract path for this template. Absent means not verified. Not a live-account check. |
+| `pagination` | object | No | single_page on REST templates. The extract route pins dlt's single_page paginator, so a list endpoint returns its first page and a next-page link is not followed. SQL templates leave this unset. |
+
+### ConnectorVerification
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `method` | string | Yes |  |
+| `date` | string | Yes |  |
 
 ### ConversationTurn
 
