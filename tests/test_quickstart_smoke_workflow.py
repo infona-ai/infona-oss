@@ -47,6 +47,12 @@ def test_script_and_fragment_guard_readme_claims() -> None:
     assert "FLAURA2" in script
     assert "SMOKE_MODE" in script
     assert "neo4j" in script and "healthy" in script
+    assert "load_prebuilt_suppliers.sh" in script
+    assert "er rebuild --kg suppliers" in script
+    assert "6 → 3" in script
+    assert "Austin" in script
+    assert "credit_rating" in script
+    assert "not silently guessed" in script
     frag = FRAG.read_text(encoding="utf-8")
     assert "oss-quickstart-smoke.yml" in frag
     assert "FLAURA2" in frag

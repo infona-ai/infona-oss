@@ -47,7 +47,7 @@ This repo is the **OSS runtime** (`infona_client`, `@infona-ai/cli`, `@infona-ai
 
 Need: Docker + Node 20+ (for the `infona` CLI). A stranger gets a real answer with **no API key**.
 
-`./scripts/oss_up.sh` compose-ups Neo4j + API, waits until `/health` reports Neo4j up, writes `~/.infona/config.json`, and loads the prebuilt trials graph. After that, **bare `infona` works**. `--local` / `--no-login` are first-run / one-off flags; they do **not** rewrite config. Re-connect without compose: `infona init --local`.
+`./scripts/oss_up.sh` compose-ups Neo4j + API, waits until `/health` reports Neo4j up, writes `~/.infona/config.json`, loads the prebuilt trials graph, and loads six unmerged Supplier fragments from the frozen suppliers schema. After that, **bare `infona` works**. `--local` / `--no-login` are first-run / one-off flags; they do **not** rewrite config. Re-connect without compose: `infona init --local`.
 
 ### Zero-key (cached-plan replay)
 
@@ -58,36 +58,52 @@ The prebuilt path **replays a cached Cypher plan**. It is **not live inference**
 git clone https://github.com/infona-ai/infona-oss.git && cd infona-oss
 cp .env.example .env          # leave OPENROUTER_API_KEY empty / as the placeholder
 npm i -g @infona-ai/cli       # or use npx @infona-ai/cli in place of infona
-./scripts/oss_up.sh           # Neo4j + API + ~/.infona/config.json + prebuilt trials graph
+./scripts/oss_up.sh           # Neo4j + API + trials snapshot + six supplier fragments
 infona ask "Which Phase 3 NSCLC trials is AstraZeneca running?" --kg trials
 ```
 
 That question should return **FLAURA2**, labelled as a **cached-plan replay** (not live inference).
 
-Reload the snapshot later (still no key):
+The suppliers demo further down is a different zero-key path: schema inference is cached, and `infona er rebuild --kg suppliers` runs live.
+
+Reload the trials snapshot later (still no key):
 
 ```bash
 ./scripts/load_prebuilt_trials.sh
 infona ask "Which Phase 3 NSCLC trials is AstraZeneca running?" --kg trials
 ```
 
-Advertised bound stays **10 minutes**. Measured **1 min 42 s** cold on **macOS 26.5.1 + Colima** (Ubuntu 24.04 VM, 4 CPU, 6 GB; warm daemon, empty project, `docker compose build --no-cache`) from `git clone` to that zero-key ask. Native Linux was **not** measured. First-time `neo4j:5-community` pull is extra; 10 minutes still covers it. Timing notes: [docs/quickstart-timing.md](docs/quickstart-timing.md).
+Advertised bound stays **10 minutes**. Measured **1 min 42 s** cold on **macOS 26.5.1 + Colima** (Ubuntu 24.04 VM, 4 CPU, 6 GB; warm daemon, empty project, `docker compose build --no-cache`) from `git clone` to that zero-key ask. That measurement does **not** include the later suppliers fragment load (six rows, no LLM) and does **not** include `er rebuild`. Native Linux was **not** measured. First-time `neo4j:5-community` pull is extra; 10 minutes still covers it. Timing notes: [docs/quickstart-timing.md](docs/quickstart-timing.md).
 
 Placeholder keys from `.env.example` (`sk-or-...`) count as **no key**.
 `INFONA_ASK_CACHED_PLAN=1` forces replay even with a key (tests). `=0` disables it.
 
-### 1. Messy suppliers — URI merge
+### 1. Messy suppliers — URI merge (live ER)
 
 `examples/suppliers-messy.csv` is **synthetic** (Acme / Globex / Initech, fake tax IDs). No real customer data.
 
-Schema inference needs a key (paste `OPENROUTER_API_KEY=sk-or-...` into `.env`):
+`./scripts/oss_up.sh` loads it with **no API key**. What is cached, and what runs:
+
+| Step | suppliers-messy | trials `ask` |
+|---|---|---|
+| Schema inference | **Cached.** [`examples/prebuilt/suppliers_schema.json`](examples/prebuilt/suppliers_schema.json) is a frozen mapping. No model call. | Not used. The trials graph is a frozen triple snapshot. |
+| Row write | **Live.** `apply_mapping` + `insert_facts` write six Supplier fragments. | **Cached** snapshot (`examples/prebuilt/trials_snapshot.json`). |
+| Entity resolution | **Live.** `oss_up.sh` does not merge. `infona er rebuild --kg suppliers` does. | Not part of the ask demo. |
+| `/ask` | Not this demo. | **Cached-plan replay** with no key. Live Cypher when a real key is set. |
+
+```bash
+./scripts/oss_up.sh
+infona er rebuild --kg suppliers
+```
+
+`er rebuild` re-blocks the already-loaded graph and **collapses fragment URIs** (6→3). Headquarters and credit_rating then land as graph state: **Austin is the current HQ** (San Francisco stays stored, closed); equal-trust `credit_rating` stays dual-current and flagged.
+
+Ingesting the CSV yourself still calls schema inference and needs a key (paste `OPENROUTER_API_KEY=sk-or-...` into `.env`):
 
 ```bash
 infona ingest examples/suppliers-messy.csv --kg suppliers
 infona er rebuild --kg suppliers
 ```
-
-Ingest writes every row as its own Supplier fragment. `er rebuild` re-blocks the already-ingested graph and **collapses fragment URIs** (6→3). Headquarters and credit_rating then land as graph state: **Austin is the current HQ** (San Francisco stays stored, closed); equal-trust `credit_rating` stays dual-current and flagged.
 
 ```
 Rebuilding entity resolution for suppliers…

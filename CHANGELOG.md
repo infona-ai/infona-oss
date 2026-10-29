@@ -55,6 +55,11 @@ want the tag series to catch up.
 
 ### Added
 
+- Zero-key suppliers demo: `examples/prebuilt/suppliers_schema.json` is a
+  frozen CSV schema (the only cached step). `oss_up.sh` writes six
+  unmerged Supplier fragments. `infona er rebuild --kg suppliers` runs
+  live (6→3, Austin by authority, `credit_rating` flagged). The trials
+  cached-plan ask is unchanged.
 - `DELETE /graphs/{tenant}/functions/{function_name}?entity_type=`
   detaches a TENANT-layer function attachment (404 if missing; Enhanced
   and Public attachments are refused).

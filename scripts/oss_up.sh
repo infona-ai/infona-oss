@@ -5,9 +5,11 @@
 #   ./scripts/oss_up.sh
 #
 # Never opens a browser. Does not start a second-shell uvicorn.
-# OPENROUTER_API_KEY is optional at boot: the prebuilt trials graph + cached
-# ask plan work with no key (not live inference). A key is only needed to
-# ingest *your own* data.
+# OPENROUTER_API_KEY is optional at boot.
+#   trials ask  — cached Cypher plan (not live inference)
+#   suppliers   — frozen schema mapping, six unmerged fragments (no LLM)
+# Entity resolution is not run here. A key is only needed to ingest *your own*
+# data (schema inference) or to ask with a live model.
 
 set -euo pipefail
 
@@ -33,7 +35,7 @@ if [[ ! -f "${ROOT}/.env" ]]; then
     die ".env is missing and .env.example was not found"
   fi
   cp "${ROOT}/.env.example" "${ROOT}/.env"
-  log "Created .env from .env.example (no API key needed for the prebuilt trials graph)."
+  log "Created .env from .env.example (no API key needed for trials or suppliers)."
   log "Paste OPENROUTER_API_KEY later to ingest your own data."
 fi
 
@@ -117,6 +119,11 @@ if [[ -x "${ROOT}/scripts/load_prebuilt_trials.sh" ]]; then
   "${ROOT}/scripts/load_prebuilt_trials.sh" || log "prebuilt load skipped (run ./scripts/load_prebuilt_trials.sh)"
 fi
 
+if [[ -x "${ROOT}/scripts/load_prebuilt_suppliers.sh" ]]; then
+  log "Loading suppliers-messy fragments (cached schema, no API key; ER not applied)…"
+  "${ROOT}/scripts/load_prebuilt_suppliers.sh"
+fi
+
 BIN="infona"
 if ! command -v infona >/dev/null 2>&1; then
   BIN="npx @infona-ai/cli"
@@ -124,10 +131,13 @@ if ! command -v infona >/dev/null 2>&1; then
 fi
 
 log ""
-ok "Local loop is up. Zero-key next (cached-plan replay, not live inference):"
+ok "Local loop is up."
+log "Trials ask is a cached-plan replay, not live inference:"
 log "  ${BIN} ask \"Which Phase 3 NSCLC trials is AstraZeneca running?\" --kg trials"
 log ""
 log "Bring an OPENROUTER_API_KEY to ingest your own data:"
 log "  ${BIN} ingest examples/trials.csv --kg trials"
 log "  ${BIN} export --kg trials -f json -o trials.json"
 log ""
+log "Suppliers: schema inference is cached; entity resolution runs live:"
+log "  ${BIN} er rebuild --kg suppliers"

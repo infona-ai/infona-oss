@@ -1,6 +1,9 @@
 # ONTA-287 — README 10-minute quickstart guard.
-# Mocked / zero-key on every PR (no key, no spend). Live-key ingest+ask only
-# on push-to-main and workflow_dispatch — never fork PRs, never PR secrets.
+# Mocked / zero-key on every PR (no key, no spend): trials cached-plan ask
+# (FLAURA2) and live `er rebuild` on the pre-mapped suppliers graph (6→3).
+# Live-key ingest+ask only on push-to-main and workflow_dispatch — never
+# fork PRs, never PR secrets. That job also runs the suppliers er rebuild
+# (oss_up.sh has already loaded the fragments).
 # Job if: cannot read `secrets`. Empty OPENROUTER_API_KEY skips live steps
 # (exit 0), never fails the job.
 #
@@ -110,6 +113,7 @@ jobs:
           pytest -m "not integration" -q --tb=short \
             tests/test_zero_key_ask.py \
             tests/test_suppliers_messy_fixture.py \
+            tests/test_suppliers_premapped.py \
             tests/test_quickstart_smoke_workflow.py \
             tests/test_file_size_budget.py
         env:

@@ -7,16 +7,30 @@ field-conflict winners applied as current graph values.
 `examples/suppliers-messy.csv` is **synthetic** (Acme / Globex / Initech,
 fake tax IDs). No real customer data, no spider-bench leakage.
 
+No API key for the shipped file. `./scripts/oss_up.sh` applies the frozen
+schema (`examples/prebuilt/suppliers_schema.json`) and writes six fragments.
+That file is a frozen CSVSchemaMapping standing in for schema inference
+(no model call at load time). Row mapping is deterministic.
+`er rebuild` is live — `oss_up.sh` does not merge:
+
+```bash
+./scripts/oss_up.sh
+infona er rebuild --kg suppliers
+```
+
+Ingesting the CSV yourself still calls schema inference and needs
+`OPENROUTER_API_KEY`:
+
 ```bash
 infona ingest examples/suppliers-messy.csv --kg suppliers
 infona er rebuild --kg suppliers
 ```
 
-Ingest writes every row as its own Supplier fragment (intra-batch ER
-cannot see siblings yet). `er rebuild` re-blocks the already-ingested
-graph and collapses the fragments (6→3). Headquarters and credit_rating
-then land as graph state: Austin is the current HQ (SF stored/closed);
-equal-trust credit_rating stays dual-current and flagged.
+Ingest (and the zero-key loader) writes every row as its own Supplier
+fragment. `er rebuild` re-blocks the already-loaded graph and collapses
+the fragments (6→3). Headquarters and credit_rating then land as graph
+state: Austin is the current HQ (SF stored/closed); equal-trust
+credit_rating stays dual-current and flagged.
 
 A stranger should see something in this shape — URI merge, a winner, a
 why, a timestamp, and one leftover conflict the system refused to guess:

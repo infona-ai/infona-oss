@@ -41,6 +41,19 @@ Globex and Initech agree with themselves on every field.
 
 ## Quickstart
 
+No API key. `oss_up.sh` applies the frozen schema
+([`examples/prebuilt/suppliers_schema.json`](prebuilt/suppliers_schema.json))
+and writes six fragments. Schema inference is the cached step. `er rebuild`
+runs live:
+
+```bash
+./scripts/oss_up.sh
+infona er rebuild --kg suppliers
+```
+
+Ingesting the CSV yourself still calls schema inference and needs
+`OPENROUTER_API_KEY`:
+
 ```bash
 infona ingest examples/suppliers-messy.csv --kg suppliers
 infona er rebuild --kg suppliers
