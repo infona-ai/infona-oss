@@ -612,6 +612,9 @@ rather than each client shipping a copy, so the Explorer, the CLI and MCP
 offer the identical catalog. No secrets: a template names the credential
 the user must paste (BYOK), never one we hold.
 
+``incremental`` is set on stripe, postgres, and mysql only. Every other
+template is a full pull. See docs/extract-incremental.md.
+
 **200:** Successful Response
 **422:** Validation Error
 
@@ -2509,6 +2512,15 @@ Accept Invite By Token
 | `username_label` | object | No |  |
 | `username_default` | object | No |  |
 
+### ConnectorIncremental
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `mode` | string | Yes |  |
+| `column` | object | No |  |
+| `filter` | object | No |  |
+| `note` | string | Yes |  |
+
 ### ConnectorPlaceholder
 
 | Field | Type | Required | Description |
@@ -2545,6 +2557,7 @@ Accept Invite By Token
 | `resources` | array | No |  |
 | `custom` | boolean | No |  |
 | `note` | string | No |  |
+| `incremental` | object | Yes | Set for stripe, postgres, and mysql. Null means a full pull. |
 
 ### ConversationTurn
 
@@ -2615,6 +2628,7 @@ Accept Invite By Token
 | `map` | object | No |  |
 | `kg` | object | No |  |
 | `enabled` | boolean | No |  |
+| `connector_id` | object | No |  |
 | `secrets` | object | No |  |
 
 ### CreateJobResponse
@@ -2718,6 +2732,7 @@ Accept Invite By Token
 | `resources` | array | Yes |  |
 | `headers` | object | No |  |
 | `limit` | integer | No |  |
+| `cursor_column` | object | No | Postgres and MySQL only: the column dlt incremental compares. A single SQL identifier. Omit for a full pull. Rejected on every other template. |
 
 ### EnrichActionRequest
 
@@ -2863,6 +2878,9 @@ Accept Invite By Token
 | `resources` | array | No |  |
 | `mapped` | array | No |  |
 | `kg` | object | No |  |
+| `connector_id` | object | No |  |
+| `cursor_column` | object | No |  |
+| `cursors` | object | No |  |
 | `created_at` | object | No |  |
 | `updated_at` | object | No |  |
 | `schedule` | object | No |  |
@@ -3523,6 +3541,7 @@ Accept Invite By Token
 |-------|------|----------|-------------|
 | `kg` | object | No |  |
 | `limit` | object | No |  |
+| `full_refresh` | boolean | No |  |
 
 ### RunManifest
 
@@ -3866,6 +3885,7 @@ Accept Invite By Token
 | `map` | object | No |  |
 | `kg` | object | No |  |
 | `enabled` | object | No |  |
+| `connector_id` | object | No |  |
 | `secrets` | object | No |  |
 
 ### UpdateSkillRequest

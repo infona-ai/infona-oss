@@ -20,6 +20,12 @@ from infona_client.ingestion.errors import (
     DltNotInstalled,
     DltSecretMissing,
 )
+from infona_client.ingestion.incremental import (
+    collect_rows,
+    sql_incremental_plan,
+    stripe_endpoint_params,
+    window_of,
+)
 from infona_client.ingestion.models import DltAuthSpec, DltSourceSpec
 from infona_client.ingestion.secrets import ResolvedSecrets
 
@@ -45,6 +51,8 @@ class ExtractedResource:
 
     name: str
     rows: list[dict[str, str]] = field(default_factory=list)
+    #: Greatest cursor value among ingested rows. None keeps the stored cursor.
+    cursor: Optional[str] = None
 
 
 def dlt_available() -> bool:
@@ -176,16 +184,7 @@ def _build_dlt_source(spec: DltSourceSpec, secrets: ResolvedSecrets) -> Any:
         auth_cfg = _rest_auth_cfg(spec.auth, secrets)
         if auth_cfg:
             client_cfg["auth"] = auth_cfg
-        resources = [
-            {
-                "name": name,
-                "endpoint": {
-                    "path": _safe_resource_path(name),
-                    "paginator": "single_page",
-                },
-            }
-            for name in spec.resources
-        ]
+        resources = [_rest_resource(spec, name) for name in spec.resources]
         return rest_api_source({"client": client_cfg, "resources": resources})
 
     if spec.kind == "sql":
@@ -205,17 +204,69 @@ def _build_dlt_source(spec: DltSourceSpec, secrets: ResolvedSecrets) -> Any:
         kwargs: dict[str, Any] = {"credentials": dsn}
         tables = list(spec.resources)
         try:
-            return sql_database(**kwargs, table_names=tables)
+            source = sql_database(**kwargs, table_names=tables)
         except TypeError:
             try:
-                return sql_database(**kwargs, include_tables=tables)
+                source = sql_database(**kwargs, include_tables=tables)
             except TypeError as exc:
                 raise DltExtractError(
                     "dlt sql_database does not accept table_names/include_tables; "
                     "refusing an unfiltered database reflect"
                 ) from exc
+        return _with_sql_incremental(source, spec)
 
     raise DltExtractError(f"unknown source kind: {spec.kind}")
+
+
+def _rest_resource(spec: DltSourceSpec, name: str) -> dict[str, Any]:
+    endpoint: dict[str, Any] = {
+        "path": _safe_resource_path(name),
+        "paginator": "single_page",
+    }
+    params = stripe_endpoint_params(spec, name)
+    if params:
+        endpoint["params"] = params
+    return {"name": name, "endpoint": endpoint}
+
+
+def _incremental_hint(dlt: Any, kwargs: dict[str, Any]) -> Any:
+    """Build a dlt incremental. Older dlt without range_start still gets the cursor."""
+    try:
+        return dlt.sources.incremental(**kwargs)
+    except TypeError:
+        return dlt.sources.incremental(
+            kwargs["cursor_path"],
+            initial_value=kwargs.get("initial_value"),
+        )
+
+
+def _named_resource(resources: Any, name: str) -> Any:
+    from collections.abc import Mapping
+
+    if not isinstance(resources, Mapping):
+        return None
+    if name in resources:
+        return resources[name]
+    target = _norm(name)
+    for key, res in resources.items():
+        if _norm(str(key)) == target:
+            return res
+    return None
+
+
+def _with_sql_incremental(source: Any, spec: DltSourceSpec) -> Any:
+    """Attach dlt incremental to each table that has a stored cursor."""
+    plan = sql_incremental_plan(spec)
+    if not plan:
+        return source
+    resources = getattr(source, "resources", None)
+    dlt = _import_dlt()
+    for name, kwargs in plan.items():
+        res = _named_resource(resources, name)
+        if res is None or not hasattr(res, "apply_hints"):
+            raise DltExtractError(f"sql incremental could not attach to table {name}")
+        res.apply_hints(incremental=_incremental_hint(dlt, kwargs))
+    return source
 
 
 def _iter_resource_rows(resource: Any, limit: int) -> Iterator[dict[str, str]]:
@@ -268,13 +319,22 @@ def extract_records(
 
     stamp = extracted_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     wanted = set(spec.resources)
+    window = window_of(spec)
     out: list[ExtractedResource] = []
     try:
         for name, resource in _resource_items(source):
             if wanted and name not in wanted and _norm(name) not in {_norm(w) for w in wanted}:
                 continue
+            cursor: Optional[str] = None
+            if window is None:
+                raw_rows = list(_iter_resource_rows(resource, spec.limit))
+            else:
+                kept, cursor = collect_rows(
+                    resource, window=window, resource_name=name, limit=spec.limit
+                )
+                raw_rows = [_stringify_row(raw) for raw in kept]
             rows = []
-            for row in _iter_resource_rows(resource, spec.limit):
+            for row in raw_rows:
                 row.setdefault("extracted_at", stamp)
                 if spec.kind == "rest_api" and spec.base_url:
                     row.setdefault(
@@ -282,7 +342,7 @@ def extract_records(
                         f"{spec.base_url.rstrip('/')}/{name.lstrip('/')}",
                     )
                 rows.append(row)
-            out.append(ExtractedResource(name=name, rows=rows))
+            out.append(ExtractedResource(name=name, rows=rows, cursor=cursor))
     except (DltNotInstalled, DltSecretMissing, DltExtractError):
         raise
     except Exception as exc:  # noqa: BLE001

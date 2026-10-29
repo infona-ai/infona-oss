@@ -66,6 +66,7 @@ export type {
   DltResourceMap,
   DltSourceKind,
   DltSourceSpec,
+  ConnectorIncremental,
   ConnectorTemplate,
   ExtractSchedule,
   ExtractScheduleWrite,

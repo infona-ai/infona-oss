@@ -318,6 +318,8 @@ export interface DltSourceSpec {
   resources: string[];
   headers?: Record<string, string>;
   limit?: number;
+  /** Postgres / MySQL templates only. Other templates reject it. */
+  cursor_column?: string;
 }
 
 export interface DltResourceMap {
@@ -352,6 +354,10 @@ export interface ExtractSourceSummary {
   resources: string[];
   mapped: string[];
   kg?: string | null;
+  connector_id?: string | null;
+  cursor_column?: string | null;
+  /** Per-resource high-water marks. Empty when the source is a full pull. */
+  cursors?: Record<string, string>;
   schedule?: ExtractSchedule | null;
 }
 
@@ -361,6 +367,14 @@ export interface ExtractScheduleWrite {
   interval_seconds?: number;
   cron?: string;
   enabled?: boolean;
+}
+
+/** Set on stripe, postgres, and mysql. Null on every other template (full pull). */
+export interface ConnectorIncremental {
+  mode: "sql" | "stripe";
+  column?: string | null;
+  filter?: string | null;
+  note: string;
 }
 
 /** One connector template from `GET .../extract-sources/catalog` (ONTA-555).
@@ -392,6 +406,7 @@ export interface ConnectorTemplate {
   }[];
   custom: boolean;
   note?: string;
+  incremental?: ConnectorIncremental | null;
 }
 
 export interface ExtractSourceWrite {
@@ -401,5 +416,6 @@ export interface ExtractSourceWrite {
   map?: Record<string, DltResourceMap>;
   kg?: string;
   enabled?: boolean;
+  connector_id?: string;
   secrets?: Record<string, string>;
 }
