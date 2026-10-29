@@ -95,6 +95,39 @@ def test_get_connector_is_case_insensitive_and_misses_cleanly():
     assert get_connector("nope-not-real") is None
 
 
+def test_only_hubspot_stripe_and_pipedrive_are_marked_verified():
+    """The marker matches the fixture tests. Salesforce stays unset."""
+    from infona_client.ingestion.catalog_data import DOC_FIXTURE_VERIFICATION
+    from tests.connector_doc_fixtures import DEFERRED_ID, DOCUMENTED, VERIFIED_IDS
+
+    verified = [c for c in CONNECTORS if c.verified is not None]
+    assert {c.id for c in verified} == set(VERIFIED_IDS)
+    for template in verified:
+        assert template.verified == DOC_FIXTURE_VERIFICATION
+        contract = DOCUMENTED[template.id]
+        assert template.base_url == contract["base_url"]
+        assert template.auth.type == contract["auth_type"]
+        assert template.auth.api_key_header == contract["api_key_header"]
+        assert [r.path for r in template.resources] == [
+            item["path"] for item in contract["resources"]
+        ]
+        assert "first page" in template.note
+
+    salesforce = get_connector(DEFERRED_ID)
+    assert salesforce is not None
+    assert salesforce.verified is None
+    assert "deferred" in salesforce.note.lower()
+    assert "sandbox" in salesforce.note.lower()
+
+
+def test_rest_templates_document_single_page_and_sql_does_not():
+    for template in CONNECTORS:
+        if template.kind == "rest_api":
+            assert template.pagination == "single_page", template.id
+        else:
+            assert template.pagination is None, template.id
+
+
 def test_unresolved_placeholders_reports_unfilled_slots():
     assert unresolved_placeholders("https://{store}.myshopify.com") == ["store"]
     assert unresolved_placeholders("https://acme.myshopify.com") == []
@@ -110,7 +143,15 @@ def test_catalog_route_serves_the_same_list(client, auth_headers):
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert [c["id"] for c in body] == [c.id for c in CONNECTORS]
-    assert "hubspot" in {c["id"] for c in body}
+    by_id = {c["id"]: c for c in body}
+    assert by_id["hubspot"]["verified"]["method"]
+    assert by_id["hubspot"]["verified"]["date"] == "2026-10-29"
+    assert by_id["stripe"]["verified"]["date"] == "2026-10-29"
+    assert by_id["pipedrive"]["verified"]["date"] == "2026-10-29"
+    assert by_id["pipedrive"]["base_url"] == "https://api.pipedrive.com/api/v2"
+    assert by_id["salesforce"]["verified"] is None
+    assert by_id["hubspot"]["pagination"] == "single_page"
+    assert by_id["postgres"]["pagination"] is None
 
 
 def test_catalog_is_not_shadowed_by_a_source_named_catalog(client, auth_headers):

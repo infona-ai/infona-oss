@@ -392,6 +392,10 @@ export interface ConnectorTemplate {
   }[];
   custom: boolean;
   note?: string;
+  /** Set only after a public-docs mocked-HTTP check. Absent means not verified. */
+  verified?: { method: string; date: string } | null;
+  /** REST templates: first page only. SQL templates omit it. */
+  pagination?: "single_page" | null;
 }
 
 export interface ExtractSourceWrite {

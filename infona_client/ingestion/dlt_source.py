@@ -167,6 +167,8 @@ def _build_dlt_source(spec: DltSourceSpec, secrets: ResolvedSecrets) -> Any:
         validate_extract_target(spec)
         # Pin single_page. dlt's default is auto-detect (HeaderLink / JSON next),
         # which follows attacker-controlled hops off base_url (SSRF).
+        # REST catalog templates report this as pagination="single_page":
+        # a list endpoint returns its first page and a next link is not followed.
         client_cfg: dict[str, Any] = {
             "base_url": spec.base_url,
             "paginator": "single_page",
