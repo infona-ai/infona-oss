@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "source": "examples/suppliers-messy.csv",
+  "cached_step": "schema-inference",
+  "not_cached": ["row-mapping", "entity-resolution"],
+  "note": "Frozen CSVSchemaMapping for examples/suppliers-messy.csv. It stands in for the LLM schema-inference call. oss_up applies it with apply_mapping (deterministic, no model) and writes six Supplier fragments through insert_facts. Entity resolution is not stored here.",
+  "mapping": {
+    "entity_type": "Supplier",
+    "columns": [
+      {
+        "column_name": "record_id",
+        "role": "type_id",
+        "attribute_name": "record_id",
+        "datatype": "string"
+      },
+      {
+        "column_name": "supplier_name",
+        "role": "attribute",
+        "attribute_name": "supplier_name",
+        "datatype": "string"
+      },
+      {
+        "column_name": "record_source",
+        "role": "attribute",
+        "attribute_name": "record_source",
+        "datatype": "string"
+      },
+      {
+        "column_name": "observed_at",
+        "role": "attribute",
+        "attribute_name": "observed_at",
+        "datatype": "string"
+      },
+      {
+        "column_name": "authority",
+        "role": "attribute",
+        "attribute_name": "authority",
+        "datatype": "string"
+      },
+      {
+        "column_name": "tax_id",
+        "role": "attribute",
+        "attribute_name": "tax_id",
+        "datatype": "string"
+      },
+      {
+        "column_name": "headquarters",
+        "role": "attribute",
+        "attribute_name": "headquarters",
+        "datatype": "string"
+      },
+      {
+        "column_name": "credit_rating",
+        "role": "attribute",
+        "attribute_name": "credit_rating",
+        "datatype": "string"
+      },
+      {
+        "column_name": "email",
+        "role": "attribute",
+        "attribute_name": "email",
+        "datatype": "string"
+      },
+      {
+        "column_name": "phone",
+        "role": "attribute",
+        "attribute_name": "phone",
+        "datatype": "string"
+      }
+    ]
+  }
+}

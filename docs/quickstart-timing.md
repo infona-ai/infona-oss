@@ -62,7 +62,9 @@ A: FLAURA2
 ```
 
 Entity-resolution rebuild was **not** timed. It is not on the zero-key
-first-result path.
+first-result path. `oss_up.sh` now also loads six suppliers-messy fragments
+from the frozen schema (no LLM). That load was **not** part of the 1m 42s
+figure, and `er rebuild` is still a separate command.
 
 ## How this was timed
 

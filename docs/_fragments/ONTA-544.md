@@ -12,14 +12,15 @@ is configured.
 git clone https://github.com/infona-ai/infona-oss.git && cd infona-oss
 cp .env.example .env          # leave OPENROUTER_API_KEY empty / as the placeholder
 npm i -g @infona-ai/cli       # or use npx @infona-ai/cli in place of infona
-./scripts/oss_up.sh           # Neo4j + API + loads the prebuilt trials graph
+./scripts/oss_up.sh           # Neo4j + API + trials snapshot + six supplier fragments
 infona ask "Which Phase 3 NSCLC trials is AstraZeneca running?" --kg trials
 ```
 
 That question should return **FLAURA2**, labelled as a **cached-plan replay**
 (not live inference). `./scripts/oss_up.sh` compose-ups, waits until `/health`
 reports Neo4j up, writes `~/.infona/config.json`, and runs
-`./scripts/load_prebuilt_trials.sh`.
+`./scripts/load_prebuilt_trials.sh` plus `./scripts/load_prebuilt_suppliers.sh`
+(six fragments; entity resolution is not applied).
 
 Reload the snapshot later (still no key):
 
@@ -34,7 +35,12 @@ Need: Docker + Node 20+ (for the `infona` CLI). **No OpenRouter account.**
 
 Schema inference and live `/ask` call an LLM. Paste `OPENROUTER_API_KEY` into
 `.env` and re-run compose (or export it) when you want to ingest a CSV that is
-not the shipped snapshot:
+not the shipped trials snapshot or the shipped suppliers schema.
+
+`examples/suppliers-messy.csv` is the other zero-key path:
+`examples/prebuilt/suppliers_schema.json` is a frozen mapping (no model call
+at load time), and `infona er rebuild --kg suppliers` runs live (6→3,
+Austin by authority, `credit_rating` flagged). It is not a cached-plan replay.
 
 ```bash
 # .env: OPENROUTER_API_KEY=sk-or-...
@@ -51,7 +57,9 @@ key is present.
 |---|---|
 | `examples/prebuilt/trials_snapshot.json` | Frozen ingest-shaped facts from `examples/trials.csv` |
 | `examples/prebuilt/ask_plan_flaura2.json` | Stored Cypher + template steps for the hero question |
-| `scripts/load_prebuilt_trials.sh` | Loads the snapshot into Neo4j (no LLM) |
+| `examples/prebuilt/suppliers_schema.json` | Frozen CSV schema for `suppliers-messy` (inference only; ER is not in the file) |
+| `scripts/load_prebuilt_trials.sh` | Loads the trials snapshot into Neo4j (no LLM) |
+| `scripts/load_prebuilt_suppliers.sh` | Maps suppliers rows and writes six fragments (no LLM, no merge) |
 | `infona_client/nlp/ask_cached_plan.py` | Replay hook (no-key / `INFONA_ASK_CACHED_PLAN=1` only) |
 
 `INFONA_ASK_CACHED_PLAN=1` forces replay even with a key (tests). `=0` disables

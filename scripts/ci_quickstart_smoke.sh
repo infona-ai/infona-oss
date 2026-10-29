@@ -3,7 +3,9 @@
 # Does not boot Docker — the workflow starts Neo4j + the API (or oss_up.sh).
 #
 #   SMOKE_MODE=mocked  health + load_prebuilt + zero-key ask → FLAURA2
+#                      + suppliers schema load + live er rebuild → 6→3
 #   SMOKE_MODE=live    health + ingest trials + pinned ask → FLAURA2
+#                      + live er rebuild on the suppliers kg oss_up loaded
 #
 # Usage (from repo root, stack already up):
 #   ./scripts/ci_quickstart_smoke.sh
@@ -89,6 +91,36 @@ assert_haystack() {
   fi
 }
 
+run_suppliers_er() {
+  local load="${1:-0}"
+  if [[ "${load}" == "1" ]]; then
+    if [[ ! -x "${ROOT}/scripts/load_prebuilt_suppliers.sh" ]]; then
+      die "scripts/load_prebuilt_suppliers.sh is missing"
+    fi
+    log "Loading suppliers-messy (cached schema, no LLM; ER not applied)…"
+    "${ROOT}/scripts/load_prebuilt_suppliers.sh"
+  fi
+  log "Live entity resolution (not a cached plan)…"
+  local out
+  out="$(run_infona --local er rebuild --kg suppliers 2>&1)" || {
+    printf '%s\n' "${out}" >&2
+    die "infona er rebuild --kg suppliers failed"
+  }
+  printf '%s\n' "${out}"
+  assert_haystack "${out}" "6 → 3" "er rebuild"
+  assert_haystack "${out}" "Austin" "er rebuild HQ"
+  assert_haystack "${out}" "authority" "er rebuild HQ reason"
+  assert_haystack "${out}" "credit_rating" "er rebuild leftover"
+  assert_haystack "${out}" "not silently guessed" "er rebuild flag"
+  assert_haystack "${out}" "3 fragments absorbed" "er rebuild total"
+  assert_haystack "${out}" "entities/Supplier/ERP-1001" "er rebuild winner"
+  if grep -Eiq 'cached-plan|not live inference' <<<"${out}"; then
+    printf '%s\n' "${out}" >&2
+    die "er rebuild must run live (output looked like a cached-plan replay)"
+  fi
+  ok "er rebuild Supplier 6 → 3 (Austin by authority; credit_rating flagged)"
+}
+
 is_real_key() {
   local key="${1:-}"
   [[ -n "${key}" ]] || return 1
@@ -126,6 +158,7 @@ if [[ "${MODE}" == "mocked" ]]; then
     die "zero-key ask must be labelled cached-plan replay (not live inference)"
   fi
   ok "zero-key ask returned ${HERO_HIT} (cached-plan replay)"
+  run_suppliers_er 1
 elif [[ "${MODE}" == "live" ]]; then
   if ! is_real_key "${OPENROUTER_API_KEY:-}" && ! is_real_key "${INFONA_OPENROUTER_API_KEY:-}"; then
     die "live smoke needs a real OPENROUTER_API_KEY (push-to-main / workflow_dispatch only)"
@@ -144,6 +177,7 @@ elif [[ "${MODE}" == "live" ]]; then
   printf '%s\n' "${ASK_OUT}"
   assert_haystack "${ASK_OUT}" "${HERO_HIT}" "live ask"
   ok "live ask returned ${HERO_HIT} (model=${QUERY_MODEL})"
+  run_suppliers_er 0
 else
   die "SMOKE_MODE must be mocked or live (got ${MODE})"
 fi
