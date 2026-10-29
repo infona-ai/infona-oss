@@ -13,6 +13,10 @@ Clerk-stamped bit off the verified context, so a synthetic context would look
 un-entitled for exactly the workspaces that are paying. Creating or editing a
 schedule goes through the gated routes; a lapsed workspace is handled by
 removing the source, not by silently failing its fires.
+
+A saved run reads and writes the source's per-resource cursor (INF-1006).
+The schedule action calls this same function, so a recurring read uses the
+cursor too. See docs/extract-incremental.md.
 """
 
 from __future__ import annotations
@@ -23,8 +27,14 @@ import structlog
 
 from infona_client.config import settings
 from infona_client.ingestion.extract_source_store import (
+    StoredExtractSource,
     make_extract_source_store,
     secret_store_slug,
+)
+from infona_client.ingestion.incremental import (
+    bind_incremental,
+    next_cursors,
+    plan_window,
 )
 from infona_client.ingestion.models import (
     DltExtractSource,
@@ -82,6 +92,30 @@ def build_run_request(
     return DltIngestRequest(source=spec, map=source.map, kg=kg)
 
 
+async def _persist_cursors(
+    store: Any,
+    *,
+    tenant_id: str,
+    slug: str,
+    observed: dict[str, Optional[str]],
+    full_refresh: bool,
+) -> None:
+    """Write high-water marks onto the saved source. No-op when unchanged."""
+    row = await store.get(tenant_id, slug)
+    if row is None:
+        return
+    merged = next_cursors(
+        dict(row.source.cursors),
+        observed,
+        list(row.source.source.resources),
+        full_refresh=full_refresh,
+    )
+    if merged == dict(row.source.cursors):
+        return
+    updated = row.source.model_copy(update={"cursors": merged})
+    await store.upsert(StoredExtractSource(tenant_id=tenant_id, source=updated))
+
+
 async def run_saved_extract(
     *,
     tenant_id: str,
@@ -89,19 +123,44 @@ async def run_saved_extract(
     neptune: Any,
     job_store: Any = None,
     override: Optional[RunExtractSourceRequest] = None,
+    source_factory: Any = None,
+    store: Any = None,
 ) -> IngestResult:
-    """Extract + ingest one saved source. Raises; callers map to HTTP / logs."""
+    """Extract + ingest one saved source. Raises; callers map to HTTP / logs.
+
+    When the source is an incremental template, the cursor used for this run
+    is persisted after a successful ingest. ``source_factory`` is the test
+    seam forwarded to :func:`extract_records`.
+    """
     from infona_client.ingestion.run import run_dlt_ingest
 
+    full_refresh = bool(override and override.full_refresh)
+    window = plan_window(source, full_refresh=full_refresh)
     body = build_run_request(source, override)
-    return await run_dlt_ingest(
+    if window is not None:
+        body = body.model_copy(
+            update={"source": bind_incremental(body.source, window)}
+        )
+    observed: dict[str, Optional[str]] = {}
+    result = await run_dlt_ingest(
         tenant_id=tenant_id,
         body=body,
         neptune=neptune,
         anthropic_key=settings.anthropic_api_key,
         job_store=job_store,
         store_get=tenant_store_getter(tenant_id),
+        source_factory=source_factory,
+        cursor_sink=observed if window is not None else None,
     )
+    if window is not None:
+        await _persist_cursors(
+            store or make_extract_source_store(),
+            tenant_id=tenant_id,
+            slug=source.slug,
+            observed=observed,
+            full_refresh=full_refresh,
+        )
+    return result
 
 
 async def run_scheduled_extract(

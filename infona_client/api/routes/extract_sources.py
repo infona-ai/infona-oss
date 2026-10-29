@@ -50,6 +50,7 @@ from infona_client.ingestion.extract_source_store import (
     make_extract_source_store,
 )
 from infona_client.ingestion.hosted import require_hosted_extract
+from infona_client.ingestion.incremental import validate_saved_incremental
 from infona_client.ingestion.http import raise_dlt_http
 from infona_client.ingestion.models import (
     CreateExtractSourceRequest,
@@ -118,11 +119,19 @@ def _strip_inline_secrets(source: DltSourceSpec, secrets: dict[str, str]) -> Dlt
     return source.model_copy(update={"auth": auth, "dsn": dsn, "headers": headers})
 
 
+def _check_incremental(source: DltSourceSpec, connector_id: Optional[str]) -> None:
+    try:
+        validate_saved_incremental(source, connector_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 def _to_extract(body: CreateExtractSourceRequest) -> DltExtractSource:
     secrets = dict(body.secrets)
     source = _strip_inline_secrets(body.source, secrets)
     body.secrets.clear()
     body.secrets.update(secrets)
+    _check_incremental(source, body.connector_id)
     return DltExtractSource(
         slug=body.slug,
         title=body.title or body.slug,
@@ -131,6 +140,7 @@ def _to_extract(body: CreateExtractSourceRequest) -> DltExtractSource:
         map=body.map,
         kg=body.kg,
         enabled=body.enabled,
+        connector_id=body.connector_id,
     )
 
 
@@ -147,6 +157,9 @@ async def _summary(
         resources=list(src.source.resources),
         mapped=list(src.map.keys()),
         kg=src.kg,
+        connector_id=src.connector_id,
+        cursor_column=src.source.cursor_column,
+        cursors=dict(src.cursors),
         created_at=stored.created_at,
         updated_at=stored.updated_at,
         schedule=schedule_info(schedule) if schedule is not None else None,
@@ -169,6 +182,9 @@ async def get_connector_catalog(
     rather than each client shipping a copy, so the Explorer, the CLI and MCP
     offer the identical catalog. No secrets: a template names the credential
     the user must paste (BYOK), never one we hold.
+
+    ``incremental`` is set on stripe, postgres, and mysql only. Every other
+    template is a full pull. See docs/extract-incremental.md.
     """
     require_hosted_extract(tenant)
     return list_connectors()
@@ -266,9 +282,16 @@ async def update_extract_source(
     current = row.source
     secrets = dict(body.secrets)
     source = current.source
+    connector_id = current.connector_id if body.connector_id is None else body.connector_id
     if body.source is not None:
         _reject_unfinished_template(body.source)
         source = _strip_inline_secrets(body.source, secrets)
+    _check_incremental(source, connector_id)
+    reset_cursors = False
+    if body.connector_id is not None and connector_id != current.connector_id:
+        reset_cursors = True
+    if source.cursor_column != current.source.cursor_column:
+        reset_cursors = True
     if secrets:
         try:
             await put_extract_secrets(tenant.tenant_id, current.slug, secrets)
@@ -283,6 +306,8 @@ async def update_extract_source(
             "map": current.map if body.map is None else body.map,
             "kg": current.kg if body.kg is None else body.kg,
             "enabled": current.enabled if body.enabled is None else body.enabled,
+            "connector_id": connector_id,
+            "cursors": {} if reset_cursors else current.cursors,
         }
     )
     stored = await _store().upsert(

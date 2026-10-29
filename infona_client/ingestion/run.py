@@ -82,6 +82,7 @@ async def run_dlt_ingest(
     store_get: Optional[Callable] = None,
     source_factory: Optional[Callable] = None,
     verdict_cache: Any = None,
+    cursor_sink: Optional[dict[str, Optional[str]]] = None,
 ) -> IngestResult:
     """Extract then ingest. Callers map errors to HTTP; this does not HTTPException."""
     spec = body.source
@@ -131,6 +132,9 @@ async def run_dlt_ingest(
         extracted = extract_records(
             spec, secrets=secrets, source_factory=source_factory
         )
+        if cursor_sink is not None:
+            for resource in extracted:
+                cursor_sink[resource.name] = resource.cursor
         if not extracted:
             raise DltExtractError(
                 "extract returned no resources. Check source.resources against "

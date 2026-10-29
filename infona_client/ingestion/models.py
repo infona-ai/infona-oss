@@ -41,7 +41,15 @@ import re
 from datetime import datetime
 from typing import Any, Literal, Optional
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    field_validator,
+    model_validator,
+)
 
 DltSourceKind = Literal["rest_api", "sql"]
 DltAuthType = Literal["bearer", "basic", "api_key", "none"]
@@ -94,6 +102,16 @@ class DltSourceSpec(BaseModel):
     resources: list[str] = Field(min_length=1)
     headers: dict[str, str] = Field(default_factory=dict)
     limit: int = Field(default=DEFAULT_EXTRACT_LIMIT, ge=1, le=MAX_EXTRACT_LIMIT)
+    cursor_column: Optional[str] = Field(
+        default=None,
+        description=(
+            "Postgres and MySQL only: the column dlt incremental compares. "
+            "A single SQL identifier. Omit for a full pull. "
+            "Rejected on every other template."
+        ),
+    )
+    #: Per-run window. Set by the saved-extract path; not a request field.
+    _incremental: Any = PrivateAttr(default=None)
 
     @field_validator("resources")
     @classmethod
@@ -107,6 +125,23 @@ class DltSourceSpec(BaseModel):
     @classmethod
     def _strip_base_url(cls, v: Optional[str]) -> Optional[str]:
         return v.rstrip("/") if isinstance(v, str) and v else v
+
+    @field_validator("cursor_column")
+    @classmethod
+    def _cursor_column(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        text = v.strip()
+        if not text:
+            return None
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,62}", text):
+            raise ValueError("cursor_column must be a single SQL identifier")
+        return text
+
+    @property
+    def incremental(self) -> Any:
+        """Per-run window (saved extracts). Absent on a full pull. Not persisted."""
+        return self._incremental
 
     @model_validator(mode="after")
     def _kind_fields(self) -> "DltSourceSpec":
@@ -170,7 +205,11 @@ class DltIngestRequest(BaseModel):
 
 
 class DltExtractSource(BaseModel):
-    """Persisted per-workspace extract-source config (ONTA-554). Not ApiSourceSpec."""
+    """Persisted per-workspace extract-source config (ONTA-554). Not ApiSourceSpec.
+
+    ``cursors`` is the per-resource high-water mark written by a saved run.
+    Clients do not set it. See docs/extract-incremental.md.
+    """
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -181,6 +220,22 @@ class DltExtractSource(BaseModel):
     map: dict[str, DltResourceMap] = Field(default_factory=dict)
     kg: Optional[str] = None
     enabled: bool = True
+    #: Catalog id (``stripe``, ``postgres``, ``mysql``, …). Optional.
+    connector_id: Optional[str] = None
+    #: Resource name → cursor text. Written by the run path only.
+    cursors: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("connector_id")
+    @classmethod
+    def _connector_id(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        s = v.strip().lower()
+        if not s:
+            return None
+        if not SLUG_RE.match(s):
+            raise ValueError("connector_id must be a lowercase connector id")
+        return s
 
     @field_validator("slug")
     @classmethod
@@ -244,6 +299,10 @@ class ExtractSourceSummary(BaseModel):
     resources: list[str] = Field(default_factory=list)
     mapped: list[str] = Field(default_factory=list)
     kg: Optional[str] = None
+    connector_id: Optional[str] = None
+    cursor_column: Optional[str] = None
+    #: Per-resource high-water marks from the last successful incremental run.
+    cursors: dict[str, str] = Field(default_factory=dict)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     #: The source's recurring-read cadence (ONTA-555), or None when it only
@@ -262,7 +321,20 @@ class CreateExtractSourceRequest(BaseModel):
     map: dict[str, DltResourceMap] = Field(default_factory=dict)
     kg: Optional[str] = None
     enabled: bool = True
+    connector_id: Optional[str] = None
     secrets: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("connector_id")
+    @classmethod
+    def _create_connector_id(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        s = v.strip().lower()
+        if not s:
+            return None
+        if not SLUG_RE.match(s):
+            raise ValueError("connector_id must be a lowercase connector id")
+        return s
 
     @field_validator("slug")
     @classmethod
@@ -284,11 +356,29 @@ class UpdateExtractSourceRequest(BaseModel):
     map: Optional[dict[str, DltResourceMap]] = None
     kg: Optional[str] = None
     enabled: Optional[bool] = None
+    connector_id: Optional[str] = None
     secrets: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("connector_id")
+    @classmethod
+    def _update_connector_id(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        s = v.strip().lower()
+        if not s:
+            return None
+        if not SLUG_RE.match(s):
+            raise ValueError("connector_id must be a lowercase connector id")
+        return s
 
 
 class RunExtractSourceRequest(BaseModel):
-    """Optional overrides when running a saved extract source."""
+    """Optional overrides when running a saved extract source.
+
+    ``full_refresh`` ignores the stored cursor for this run. After a successful
+    extract the stored cursors are replaced by this run's high-water marks
+    (a resource with no new mark has its cursor removed).
+    """
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -297,3 +387,4 @@ class RunExtractSourceRequest(BaseModel):
         validation_alias=AliasChoices("kg", "kg_name"),
     )
     limit: Optional[int] = Field(default=None, ge=1, le=MAX_EXTRACT_LIMIT)
+    full_refresh: bool = False

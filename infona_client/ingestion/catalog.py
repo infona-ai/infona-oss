@@ -28,8 +28,12 @@ from __future__ import annotations
 import re
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
+from infona_client.ingestion.incremental import (
+    ConnectorIncremental,
+    template_incremental,
+)
 from infona_client.ingestion.models import DltAuthType, DltSourceKind
 
 #: Grouping used by the Explorer gallery. Purely presentational.
@@ -106,6 +110,12 @@ class ConnectorTemplate(BaseModel):
     custom: bool = False
     #: Free-text caveat surfaced in the drawer (auth quirks, plan requirements).
     note: str = ""
+
+    @computed_field
+    @property
+    def incremental(self) -> Optional[ConnectorIncremental]:
+        """Set for stripe, postgres, and mysql. Null means a full pull."""
+        return template_incremental(self.id)
 
     def example_base_url(self) -> Optional[str]:
         """``base_url`` with each placeholder replaced by its example value."""

@@ -209,6 +209,8 @@ curl -sS -X POST http://localhost:8000/graphs/default/ingest/dlt \
 
 SQL is the same shape with `"kind": "sql"` and `"dsn": "env:EXAMPLE_DSN"`. Hosted Explorer Connect / Run is premium (ONTA-554) and hits this same route.
 
+Saved sources (`/extract-sources`, including a scheduled `extract` run) can window the next read. Incremental templates are **stripe** (`created[gte]`), **postgres**, and **mysql** (dlt incremental on a `cursor_column` you set). Every other template is a full pull. `POST /ingest/dlt` does not store a cursor. `full_refresh` on a saved run ignores the stored cursor and replaces it. See [docs/extract-incremental.md](docs/extract-incremental.md).
+
 ---
 
 ## MCP (agents)

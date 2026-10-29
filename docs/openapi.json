@@ -7766,7 +7766,7 @@
           "extract_sources"
         ],
         "summary": "Get Connector Catalog",
-        "description": "Prefill templates for the connect flow (ONTA-555).\n\nStatic data \u2014 the same list for every workspace \u2014 served from the backend\nrather than each client shipping a copy, so the Explorer, the CLI and MCP\noffer the identical catalog. No secrets: a template names the credential\nthe user must paste (BYOK), never one we hold.",
+        "description": "Prefill templates for the connect flow (ONTA-555).\n\nStatic data \u2014 the same list for every workspace \u2014 served from the backend\nrather than each client shipping a copy, so the Explorer, the CLI and MCP\noffer the identical catalog. No secrets: a template names the credential\nthe user must paste (BYOK), never one we hold.\n\n``incremental`` is set on stripe, postgres, and mysql only. Every other\ntemplate is a full pull. See docs/extract-incremental.md.",
         "operationId": "get_connector_catalog_graphs__tenant__extract_sources_catalog_get",
         "security": [
           {
@@ -10329,6 +10329,52 @@
         "title": "ConnectorAuth",
         "description": "What credential the user pastes. Always BYOK \u2014 never a platform key."
       },
+      "ConnectorIncremental": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "sql",
+              "stripe"
+            ],
+            "title": "Mode"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Column"
+          },
+          "filter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filter"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mode",
+          "note"
+        ],
+        "title": "ConnectorIncremental",
+        "description": "How stripe, postgres, or mysql windows a saved extract."
+      },
       "ConnectorPlaceholder": {
         "properties": {
           "key": {
@@ -10479,6 +10525,18 @@
             "type": "string",
             "title": "Note",
             "default": ""
+          },
+          "incremental": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectorIncremental"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set for stripe, postgres, and mysql. Null means a full pull.",
+            "readOnly": true
           }
         },
         "type": "object",
@@ -10488,7 +10546,8 @@
           "category",
           "kind",
           "blurb",
-          "auth"
+          "auth",
+          "incremental"
         ],
         "title": "ConnectorTemplate",
         "description": "A prefilled starting point for one extract source."
@@ -10785,6 +10844,17 @@
             "type": "boolean",
             "title": "Enabled",
             "default": true
+          },
+          "connector_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connector Id"
           },
           "secrets": {
             "additionalProperties": {
@@ -11281,6 +11351,18 @@
             "minimum": 1.0,
             "title": "Limit",
             "default": 1000
+          },
+          "cursor_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor Column",
+            "description": "Postgres and MySQL only: the column dlt incremental compares. A single SQL identifier. Omit for a full pull. Rejected on every other template."
           }
         },
         "additionalProperties": false,
@@ -12164,6 +12246,35 @@
               }
             ],
             "title": "Kg"
+          },
+          "connector_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connector Id"
+          },
+          "cursor_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor Column"
+          },
+          "cursors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Cursors"
           },
           "created_at": {
             "anyOf": [
@@ -15124,12 +15235,17 @@
               }
             ],
             "title": "Limit"
+          },
+          "full_refresh": {
+            "type": "boolean",
+            "title": "Full Refresh",
+            "default": false
           }
         },
         "additionalProperties": false,
         "type": "object",
         "title": "RunExtractSourceRequest",
-        "description": "Optional overrides when running a saved extract source."
+        "description": "Optional overrides when running a saved extract source.\n\n``full_refresh`` ignores the stored cursor for this run. After a successful\nextract the stored cursors are replaced by this run's high-water marks\n(a resource with no new mark has its cursor removed)."
       },
       "RunManifest": {
         "properties": {
@@ -16672,6 +16788,17 @@
               }
             ],
             "title": "Enabled"
+          },
+          "connector_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connector Id"
           },
           "secrets": {
             "additionalProperties": {

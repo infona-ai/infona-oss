@@ -383,7 +383,7 @@ export class ClientExplore extends ClientApi {
 
   async extractSourcesRun(
     slug: string,
-    body: { kg?: string; limit?: number } = {},
+    body: { kg?: string; limit?: number; full_refresh?: boolean } = {},
   ): Promise<Record<string, unknown>> {
     return this.request<Record<string, unknown>>(
       "POST",
